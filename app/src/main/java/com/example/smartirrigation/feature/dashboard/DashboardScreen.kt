@@ -37,6 +37,9 @@ fun DashboardScreen(
         onDispose { onStopPolling() }
     }
 
+    val fallbackMode = uiState.status?.mode ?: IrrigationMode.AUTO
+    val fallbackPumpState = uiState.status?.pumpOn ?: false
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -50,6 +53,19 @@ fun DashboardScreen(
             port = uiState.port,
             onRefresh = onRefresh,
         )
+
+        if (uiState.status == null) {
+            PumpControlCard(
+                pumpOn = fallbackPumpState,
+                currentMode = fallbackMode,
+                isSendingPumpCommand = uiState.isSendingPumpCommand,
+                isSendingModeCommand = uiState.isSendingModeCommand,
+                onStartPump = onStartPump,
+                onStopPump = onStopPump,
+                onSetMode = onSetMode,
+                helperMessage = "Mode switch is always available here. If the ESP32 is offline, the command will be retried only when you tap the button again after reconnecting.",
+            )
+        }
 
         when {
             uiState.isLoading && uiState.status == null -> LoadingView("Loading device status...")
@@ -70,6 +86,7 @@ fun DashboardScreen(
                     onStartPump = onStartPump,
                     onStopPump = onStopPump,
                     onSetMode = onSetMode,
+                    helperMessage = null,
                 )
                 DeviceInfoCard(status = uiState.status)
             }

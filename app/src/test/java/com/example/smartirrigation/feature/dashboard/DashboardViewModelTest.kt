@@ -57,6 +57,50 @@ class DashboardViewModelTest {
     }
 
     @Test
+    fun switching_from_manual_to_auto_updatesStatus() = runTest {
+        val manualStatus = status.copy(mode = IrrigationMode.MANUAL, pumpOn = true)
+        val autoStatus = manualStatus.copy(mode = IrrigationMode.AUTO)
+        val viewModel = DashboardViewModel(
+            deviceRepository = FakeDeviceRepository(
+                statusResult = NetworkResult.Success(manualStatus),
+                setModeResult = NetworkResult.Success(autoStatus),
+            ),
+            settingsRepository = FakeSettingsRepository(),
+        )
+
+        viewModel.loadStatus()
+        advanceUntilIdle()
+        viewModel.setMode(IrrigationMode.AUTO)
+        advanceUntilIdle()
+
+        assertEquals(IrrigationMode.AUTO, viewModel.uiState.value.status?.mode)
+        assertEquals(autoStatus, viewModel.uiState.value.status)
+    }
+
+    @Test
+    fun save_target_in_manual_mode_updatesStatusWithoutError() = runTest {
+        val manualStatus = status.copy(mode = IrrigationMode.MANUAL, targetHumidity = 40)
+        val savedStatus = manualStatus.copy(targetHumidity = 60)
+        val viewModel = DashboardViewModel(
+            deviceRepository = FakeDeviceRepository(
+                statusResult = NetworkResult.Success(manualStatus),
+                setTargetResult = NetworkResult.Success(savedStatus),
+            ),
+            settingsRepository = FakeSettingsRepository(),
+        )
+
+        viewModel.loadStatus()
+        advanceUntilIdle()
+        viewModel.onTargetHumidityChanged(60)
+        viewModel.saveTargetHumidity()
+        advanceUntilIdle()
+
+        assertEquals(savedStatus, viewModel.uiState.value.status)
+        assertEquals(60, viewModel.uiState.value.localTargetHumidityDraft)
+        assertEquals(null, viewModel.uiState.value.errorMessage)
+    }
+
+    @Test
     fun command_failure_setsError() = runTest {
         val viewModel = DashboardViewModel(
             deviceRepository = FakeDeviceRepository(

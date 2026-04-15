@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class DashboardViewModel(
     private val deviceRepository: DeviceRepository,
@@ -26,8 +28,8 @@ class DashboardViewModel(
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     private var pollingJob: Job? = null
-    private var requestInFlight = false
     private var pollingIntervalMs = 2500L
+    private val requestMutex = Mutex()
 
     init {
         viewModelScope.launch {
@@ -70,48 +72,56 @@ class DashboardViewModel(
     fun saveTargetHumidity() {
         val target = _uiState.value.localTargetHumidityDraft
         viewModelScope.launch {
-            _uiState.update { it.copy(isSavingTarget = true, errorMessage = null) }
-            when (val result = deviceRepository.setTargetHumidity(target)) {
-                is NetworkResult.Success -> updateStatus(result.data, false)
-                is NetworkResult.HttpError -> setCommandError("Could not save target humidity: ${result.message}", target = "target")
-                is NetworkResult.NetworkError -> setCommandError(result.message, target = "target")
-                is NetworkResult.UnknownError -> setCommandError(result.message, target = "target")
+            requestMutex.withLock {
+                _uiState.update { it.copy(isSavingTarget = true, errorMessage = null) }
+                when (val result = deviceRepository.setTargetHumidity(target)) {
+                    is NetworkResult.Success -> updateStatus(result.data)
+                    is NetworkResult.HttpError -> setCommandError("Could not save target humidity: ${result.message}", target = "target")
+                    is NetworkResult.NetworkError -> setCommandError(result.message, target = "target")
+                    is NetworkResult.UnknownError -> setCommandError(result.message, target = "target")
+                }
             }
         }
     }
 
     fun startPump() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSendingPumpCommand = true, errorMessage = null) }
-            when (val result = deviceRepository.startPump()) {
-                is NetworkResult.Success -> updateStatus(result.data, false)
-                is NetworkResult.HttpError -> setCommandError("Could not start pump: ${result.message}", target = "pump")
-                is NetworkResult.NetworkError -> setCommandError(result.message, target = "pump")
-                is NetworkResult.UnknownError -> setCommandError(result.message, target = "pump")
+            requestMutex.withLock {
+                _uiState.update { it.copy(isSendingPumpCommand = true, errorMessage = null) }
+                when (val result = deviceRepository.startPump()) {
+                    is NetworkResult.Success -> updateStatus(result.data)
+                    is NetworkResult.HttpError -> setCommandError("Could not start pump: ${result.message}", target = "pump")
+                    is NetworkResult.NetworkError -> setCommandError(result.message, target = "pump")
+                    is NetworkResult.UnknownError -> setCommandError(result.message, target = "pump")
+                }
             }
         }
     }
 
     fun stopPump() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSendingPumpCommand = true, errorMessage = null) }
-            when (val result = deviceRepository.stopPump()) {
-                is NetworkResult.Success -> updateStatus(result.data, false)
-                is NetworkResult.HttpError -> setCommandError("Could not stop pump: ${result.message}", target = "pump")
-                is NetworkResult.NetworkError -> setCommandError(result.message, target = "pump")
-                is NetworkResult.UnknownError -> setCommandError(result.message, target = "pump")
+            requestMutex.withLock {
+                _uiState.update { it.copy(isSendingPumpCommand = true, errorMessage = null) }
+                when (val result = deviceRepository.stopPump()) {
+                    is NetworkResult.Success -> updateStatus(result.data)
+                    is NetworkResult.HttpError -> setCommandError("Could not stop pump: ${result.message}", target = "pump")
+                    is NetworkResult.NetworkError -> setCommandError(result.message, target = "pump")
+                    is NetworkResult.UnknownError -> setCommandError(result.message, target = "pump")
+                }
             }
         }
     }
 
     fun setMode(mode: IrrigationMode) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isSendingModeCommand = true, errorMessage = null) }
-            when (val result = deviceRepository.setMode(mode)) {
-                is NetworkResult.Success -> updateStatus(result.data, false)
-                is NetworkResult.HttpError -> setCommandError("Could not change mode: ${result.message}", target = "mode")
-                is NetworkResult.NetworkError -> setCommandError(result.message, target = "mode")
-                is NetworkResult.UnknownError -> setCommandError(result.message, target = "mode")
+            requestMutex.withLock {
+                _uiState.update { it.copy(isSendingModeCommand = true, errorMessage = null) }
+                when (val result = deviceRepository.setMode(mode)) {
+                    is NetworkResult.Success -> updateStatus(result.data)
+                    is NetworkResult.HttpError -> setCommandError("Could not change mode: ${result.message}", target = "mode")
+                    is NetworkResult.NetworkError -> setCommandError(result.message, target = "mode")
+                    is NetworkResult.UnknownError -> setCommandError(result.message, target = "mode")
+                }
             }
         }
     }
@@ -121,32 +131,36 @@ class DashboardViewModel(
     }
 
     private fun loadStatusInternal(showLoading: Boolean) {
-        if (requestInFlight) return
+        if (!requestMutex.tryLock()) return
         viewModelScope.launch {
-            requestInFlight = true
-            if (showLoading) {
-                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            } else {
-                _uiState.update { it.copy(errorMessage = null) }
+            try {
+                if (showLoading) {
+                    _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+                } else {
+                    _uiState.update { it.copy(errorMessage = null) }
+                }
+                when (val result = deviceRepository.getStatus()) {
+                    is NetworkResult.Success -> updateStatus(result.data)
+                    is NetworkResult.HttpError -> setLoadFailure("Device error ${result.code}: ${result.message}")
+                    is NetworkResult.NetworkError -> setLoadFailure(result.message)
+                    is NetworkResult.UnknownError -> setLoadFailure(result.message)
+                }
+            } finally {
+                requestMutex.unlock()
             }
-            when (val result = deviceRepository.getStatus()) {
-                is NetworkResult.Success -> updateStatus(result.data, showLoading)
-                is NetworkResult.HttpError -> setLoadFailure("Device error ${result.code}: ${result.message}")
-                is NetworkResult.NetworkError -> setLoadFailure(result.message)
-                is NetworkResult.UnknownError -> setLoadFailure(result.message)
-            }
-            requestInFlight = false
         }
     }
 
-    private fun updateStatus(status: DeviceStatus, wasLoading: Boolean) {
+    private fun updateStatus(status: DeviceStatus) {
         _uiState.update {
+            val previousTarget = it.status?.targetHumidity
+            val hasUnsavedDraft = previousTarget != null && it.localTargetHumidityDraft != previousTarget && !it.isSavingTarget
             it.copy(
                 isLoading = false,
                 isConnected = true,
                 status = status,
                 humidityStatus = HumidityStatusCalculator.calculate(status.humidity, status.targetHumidity),
-                localTargetHumidityDraft = status.targetHumidity,
+                localTargetHumidityDraft = if (hasUnsavedDraft) it.localTargetHumidityDraft else status.targetHumidity,
                 errorMessage = null,
                 isSavingTarget = false,
                 isSendingPumpCommand = false,

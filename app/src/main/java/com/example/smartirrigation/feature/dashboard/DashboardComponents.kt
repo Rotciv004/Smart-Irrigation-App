@@ -5,9 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -17,7 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import com.example.smartirrigation.core.theme.Dimens
 import com.example.smartirrigation.core.theme.DryStatusColor
 import com.example.smartirrigation.core.theme.GoodStatusColor
@@ -128,10 +125,16 @@ fun PumpControlCard(
     onStartPump: () -> Unit,
     onStopPump: () -> Unit,
     onSetMode: (IrrigationMode) -> Unit,
+    helperMessage: String?,
     modifier: Modifier = Modifier,
 ) {
     SectionCard(modifier = modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(Dimens.SpaceSmall)) {
+            val nextMode = if (currentMode == IrrigationMode.AUTO) {
+                IrrigationMode.MANUAL
+            } else {
+                IrrigationMode.AUTO
+            }
             Text("Pump control", style = MaterialTheme.typography.titleMedium)
             Text("Pump state: ${if (pumpOn) "ON" else "OFF"}", style = MaterialTheme.typography.bodyLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSmall)) {
@@ -143,19 +146,24 @@ fun PumpControlCard(
                 }
             }
             Text("Mode", style = MaterialTheme.typography.bodyLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(Dimens.SpaceSmall)) {
-                FilterChip(
-                    selected = currentMode == IrrigationMode.AUTO,
-                    onClick = { onSetMode(IrrigationMode.AUTO) },
-                    enabled = !isSendingModeCommand,
-                    label = { Text("AUTO") },
+            Text(
+                text = "Current mode: ${currentMode.name}. Use the button below to switch to the other mode.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            helperMessage?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                FilterChip(
-                    selected = currentMode == IrrigationMode.MANUAL,
-                    onClick = { onSetMode(IrrigationMode.MANUAL) },
-                    enabled = !isSendingModeCommand,
-                    label = { Text("MANUAL") },
-                )
+            }
+            Button(
+                onClick = { onSetMode(nextMode) },
+                enabled = !isSendingModeCommand,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Switch to ${nextMode.name}")
             }
         }
     }
@@ -211,7 +219,7 @@ private fun DashboardCardsPreview() {
             ConnectionStatusCard(true, "192.168.1.55", 80, onRefresh = {})
             HumidityCard(status, HumidityStatus.DRY)
             AutoWateringCard(55, IrrigationMode.AUTO, false, {}, {})
-            PumpControlCard(false, IrrigationMode.AUTO, false, false, {}, {}, {})
+            PumpControlCard(false, IrrigationMode.AUTO, false, false, {}, {}, {}, null)
             DeviceInfoCard(status)
         }
     }
